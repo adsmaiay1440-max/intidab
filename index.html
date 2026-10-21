@@ -431,6 +431,13 @@ table.rp small{color:#9a7a2a;font-size:10px;}
       <button type="button" data-v="flight" class="on">✈️ طيران</button>
       <button type="button" data-v="car">🚗 سيارة</button>
     </div>
+    <div id="carDistWrap" class="hide">
+      <span class="seg-lbl">مسافة السفر بالسيارة</span>
+      <div class="seg" id="carDistSeg">
+        <button type="button" data-v="near" class="on">📍 قريب</button>
+        <button type="button" data-v="far">🛣️ بعيد</button>
+      </div>
+    </div>
     <p class="rate-hint" id="rateHint"></p>
     <span class="seg-lbl">هل أنت لوحدك في هذا الانتداب؟</span>
     <div class="seg" id="aloneSeg">
@@ -574,7 +581,10 @@ table.rp small{color:#9a7a2a;font-size:10px;}
 <script>
 "use strict";
 /* ============ الثوابت ============ */
-const RATES = { flight:{ primary:750, additional:350 }, car:{ primary:200, additional:50 } };
+const RATES = { flight:{ primary:750, additional:350 }, car_near:{ primary:200, additional:50 }, car_far:{ primary:590, additional:200 } };
+/* السجلات القديمة للسيارة بدون carDist تُحسب "قريب" (نفس أسعارها السابقة) */
+function rateKey(type, dist){ return type==="car" ? (dist==="far" ? "car_far" : "car_near") : type; }
+function travelLabel(d, emoji=true){ if(d.travelType==="flight") return (emoji?"✈️ ":"")+"طيران"; return (emoji?"🚗 ":"")+"سيارة - "+(d.carDist==="far"?"بعيد":"قريب"); }
 const ME = "أنا";
 const STORAGE_KEY = "najm_intidab_state_v2";
 const SYNC_CODE_KEY = "najm_intidab_sync_code_v1";
@@ -596,7 +606,7 @@ function periodTxt(d){ const a=new Date(d.date+"T00:00:00"), b=new Date(addDays(
   if(d.days===1) return `${a.getDate()} ${AR_MONTHS[a.getMonth()]}`;
   return a.getMonth()===b.getMonth() ? `${a.getDate()} إلى ${b.getDate()} ${AR_MONTHS[a.getMonth()]}` : `${a.getDate()} ${AR_MONTHS[a.getMonth()]} إلى ${b.getDate()} ${AR_MONTHS[b.getMonth()]}`; }
 function daysTxt(n){ return n===1?"يوم واحد":n===2?"يومان":n+" "+(n<=10?"أيام":"يوماً"); }
-function travelerAmount(dep,t){ return dep.days * RATES[dep.travelType][t.isPrimary?"primary":"additional"]; }
+function travelerAmount(dep,t){ return dep.days * RATES[rateKey(dep.travelType, dep.carDist)][t.isPrimary?"primary":"additional"]; }
 
 /* ============ التخزين ============ */
 let cloudApplyingRemote = false;
@@ -688,7 +698,7 @@ function render(){
         <div><div class="dc-loc">📍 ${escapeHtml(d.location)}</div><span class="badge ${st.c}">${st.l}</span></div>
         <div class="dc-my"><div class="l">مستحقي</div><div class="v">${me?money(travelerAmount(d,me)):"—"}</div></div>
       </div>
-      <div class="dc-meta">${d.travelType==="flight"?"✈️ طيران":"🚗 سيارة"} · من ${shortDate(d.date)} إلى ${shortDate(end)} · ${daysTxt(d.days)}</div>
+      <div class="dc-meta">${travelLabel(d)} · من ${shortDate(d.date)} إلى ${shortDate(end)} · ${daysTxt(d.days)}</div>
       <div class="chips">${chips}</div>
       ${extra.length?`<div class="dc-extra">${extra.join("<br>")}</div>`:""}
       <div class="dc-acts"><button data-edit-dep="${d.id}">✏️ تعديل</button><button class="del" data-del-dep="${d.id}">🗑️ حذف</button></div>
@@ -730,7 +740,7 @@ $("#confirmNo").addEventListener("click", ()=>{ confirmCb=null; hide("#confirmMo
 $("#confirmYes").addEventListener("click", ()=>{ const cb=confirmCb; confirmCb=null; hide("#confirmModal"); if(cb) cb(); });
 
 /* ============ نموذج الانتداب ============ */
-let editingDep=null, travelType="flight", compCount=0, compDraft=["","","",""], expDraft=[];
+let editingDep=null, travelType="flight", carDist="near", compCount=0, compDraft=["","","",""], expDraft=[];
 function setSeg(id, v){ $(id).querySelectorAll("button").forEach(b=>b.classList.toggle("on", b.dataset.v===v)); }
 function personOpts(){
   const o=[{v:"self", l:ME}];
@@ -768,7 +778,8 @@ $("#expRows").addEventListener("change", e=>{ const t=e.target; if(t.dataset.i!=
 $("#expRows").addEventListener("click", e=>{ const b=e.target.closest("[data-rm]"); if(b){ expDraft.splice(+b.dataset.rm,1); renderExpRows(); } });
 $("#addExp").addEventListener("click", ()=>{ expDraft.push({amount:"",payer:"self",note:""}); renderExpRows(); });
 function updatePreview(){
-  const r=RATES[travelType];
+  const r=RATES[rateKey(travelType, carDist)];
+  $("#carDistWrap").classList.toggle("hide", travelType!=="car");
   $("#rateHint").textContent = `الأساسي ${r.primary} ريال · كل مرافق ${r.additional} ريال — لليوم الواحد`;
   const days=parseInt($("#f_days").value,10)||0, box=$("#preview");
   if(days<1){ box.innerHTML=""; box.classList.add("hide"); return; }
@@ -779,6 +790,7 @@ function updatePreview(){
   box.innerHTML=`<div class="pt">💡 المستحقات المتوقعة (${daysTxt(days)})</div>${rows}${compCount?`<div class="pr tot"><span>الإجمالي</span><span>${money(tot)}</span></div>`:""}`;
 }
 $("#travelSeg").addEventListener("click", e=>{ const b=e.target.closest("button"); if(!b) return; travelType=b.dataset.v; setSeg("#travelSeg",travelType); updatePreview(); });
+$("#carDistSeg").addEventListener("click", e=>{ const b=e.target.closest("button"); if(!b) return; carDist=b.dataset.v; setSeg("#carDistSeg",carDist); updatePreview(); });
 $("#aloneSeg").addEventListener("click", e=>{ const b=e.target.closest("button"); if(!b) return; setSeg("#aloneSeg",b.dataset.v);
   if(b.dataset.v==="alone"){ compCount=0; $("#compCountWrap").classList.add("hide"); }
   else { compCount=parseInt($("#f_compCount").value,10)||1; $("#compCountWrap").classList.remove("hide"); }
@@ -792,6 +804,7 @@ function openDepModal(dep){
   $("#depTitle").textContent = dep ? "تعديل الانتداب" : "إضافة انتداب جديد";
   $("#delDep").classList.toggle("hide", !dep);
   travelType = dep ? dep.travelType : "flight"; setSeg("#travelSeg", travelType);
+  carDist = (dep && dep.carDist==="far") ? "far" : "near"; setSeg("#carDistSeg", carDist);
   compCount = dep ? dep.travelers.length-1 : 0;
   compDraft = ["","","",""]; if(dep) dep.travelers.slice(1).forEach((t,i)=>compDraft[i]=t.name);
   setSeg("#aloneSeg", compCount>0?"with":"alone");
@@ -823,11 +836,12 @@ $("#saveDep").addEventListener("click", ()=>{
   }
   const expenses = expDraft.filter(e=>num(e.amount)>0 || (e.note&&e.note.trim())).map(e=>({amount:num(e.amount), payer:resolveName(e.payer||"self")||ME, note:(e.note||"").trim()}));
   const notes=$("#f_notes").value.trim();
+  const depDist = travelType==="car" ? carDist : null;
   if(editingDep){
     const d=state.deployments.find(x=>x.id===editingDep);
-    if(d) Object.assign(d,{date,days,location,travelType,travelers,expenses,notes});
+    if(d) Object.assign(d,{date,days,location,travelType,carDist:depDist,travelers,expenses,notes});
   } else {
-    state.deployments.push({id:uid(), date, days, location, travelType, travelers, expenses, notes, createdAt:Date.now(), deleted:false});
+    state.deployments.push({id:uid(), date, days, location, travelType, carDist:depDist, travelers, expenses, notes, createdAt:Date.now(), deleted:false});
   }
   save(); hide("#depModal"); toast(editingDep?"تم تحديث الانتداب ✅":"تم حفظ الانتداب ✅"); jumpToMonth(date);
 });
@@ -909,7 +923,7 @@ function buildReport(){
   const persons=allPersons().filter(p=>entitlementFor(p,f)>0||receivedFor(p,f)>0);
   const title = repMode==="month" ? `كشف انتدابات شهر ${monthLabel(mk)}` : "كشف الانتدابات — كل السجل";
   const dRows = deps.map((d,i)=>{ const me=d.travelers.find(t=>t.name===ME);
-    return `<tr><td>${i+1}</td><td class="dtl">${escapeHtml(d.location)}${d.travelers.length>1?`<br><small>+${d.travelers.length-1} مرافق</small>`:""}</td><td>${d.travelType==="flight"?"طيران":"سيارة"}</td><td>${periodTxt(d)}</td><td>${d.days}</td><td class="val">${me?money(travelerAmount(d,me)):"—"}</td></tr>`; }).join("")
+    return `<tr><td>${i+1}</td><td class="dtl">${escapeHtml(d.location)}${d.travelers.length>1?`<br><small>+${d.travelers.length-1} مرافق</small>`:""}</td><td>${travelLabel(d,false)}</td><td>${periodTxt(d)}</td><td>${d.days}</td><td class="val">${me?money(travelerAmount(d,me)):"—"}</td></tr>`; }).join("")
     || `<tr><td colspan="6">لا توجد انتدابات</td></tr>`;
   const pRows = persons.map(p=>{ const e=entitlementFor(p,f), r=receivedFor(p,f); return `<tr><td class="dtl">${escapeHtml(p)}</td><td class="val">${money(e)}</td><td class="val">${money(r)}</td><td class="val">${money(e-r)}</td></tr>`; }).join("");
   const rRows = recs.map((r,i)=>`<tr><td>${i+1}</td><td>${escapeHtml(r.person)}</td><td>${shortDate(r.date)}</td><td class="val">${money(num(r.amount))}</td><td class="dtl">${escapeHtml(r.note||"")}</td></tr>`).join("");
